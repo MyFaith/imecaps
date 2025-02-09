@@ -4,19 +4,16 @@
 #include <shellapi.h>
 #include <winreg.h>
 
-#define IDM_TOGGLE 1001
 #define IDM_EXIT   1002
 #define IDM_FULLSCREEN 1003
 #define IDM_HIDE_ICON 1004
 #define IDM_AUTOSTART 1005
 #define WM_TRAYICON (WM_USER + 1)
 #define WM_SHOW_TRAY (WM_USER + 2)
-#define LONG_PRESS_TIME 5000 // 5秒
 
 NOTIFYICONDATAW nid;
 HMENU hPopupMenu = NULL;
 HHOOK hKeyboardHook = NULL;
-bool isEnabled = true;
 bool isFullscreenDisable = true;
 bool isTrayVisible = true;
 bool isAutoStartEnabled = false;
@@ -25,12 +22,9 @@ const wchar_t* APP_NAME = L"IMECaps";
 const wchar_t CLASS_NAME[] = L"IMECapsClass";
 
 // 修改全局变量
-static DWORD capsLockDownTime = 0;
-static bool capsLockHeld = false;
 static bool ctrlKeyPressed = false;
 static bool altKeyPressed = false;
 static bool shiftKeyPressed = false;
-static bool fKeyPressed = false;  // 新增变量
 
 // 修改后的全屏检测函数
 bool IsFullscreenWindow() {
@@ -78,8 +72,6 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
             altKeyPressed = (wParam == WM_KEYDOWN);
         } else if (p->vkCode == VK_LSHIFT || p->vkCode == VK_RSHIFT) {
             shiftKeyPressed = (wParam == WM_KEYDOWN);
-        } else if (p->vkCode == 'F') {  // 新增F键检测
-            fKeyPressed = (wParam == WM_KEYDOWN);
         }
 
         // 新增F键组合检测
@@ -98,7 +90,7 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
         // 完全拦截Caps Lock键
         if (p->vkCode == VK_CAPITAL) {
             // 输入法切换逻辑
-            if (isEnabled && wParam == WM_KEYDOWN) {
+            if (wParam == WM_KEYDOWN) {
                 if (isFullscreenDisable && IsFullscreenWindow()) {
                     return 1;
                 }
@@ -216,10 +208,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                         MessageBoxW(hWnd, L"修改启动项失败，请尝试以管理员身份运行", L"错误", MB_ICONERROR);
                     }
                     break;
-                case IDM_TOGGLE:
-                    isEnabled = !isEnabled;
-                    CheckMenuItem(hPopupMenu, IDM_TOGGLE, isEnabled ? (MF_CHECKED | MF_BYCOMMAND) : (MF_UNCHECKED | MF_BYCOMMAND));
-                    break;
                 case IDM_FULLSCREEN:
                     isFullscreenDisable = !isFullscreenDisable;
                     CheckMenuItem(hPopupMenu, IDM_FULLSCREEN, 
@@ -314,7 +302,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     // 创建弹出菜单
     hPopupMenu = CreatePopupMenu();
-    AppendMenuW(hPopupMenu, MF_STRING | MF_CHECKED, IDM_TOGGLE, L"启用");
     AppendMenuW(hPopupMenu, MF_STRING | (isFullscreenDisable ? MF_CHECKED : 0), IDM_FULLSCREEN, L"全屏时禁用");
     AppendMenuW(hPopupMenu, MF_STRING | (isAutoStartEnabled ? MF_CHECKED : 0), IDM_AUTOSTART, L"开机自启");
     AppendMenuW(hPopupMenu, MF_STRING, IDM_HIDE_ICON, L"隐藏托盘图标");
