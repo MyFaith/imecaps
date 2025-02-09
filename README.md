@@ -5,7 +5,7 @@
 
 ### 快捷键
 - CTRL+ALT+SHIFT+C  恢复托盘图标显示
-- CTRL+ALT+SHIFT+F  切换全屏禁用（待实现）
+- CTRL+ALT+SHIFT+F  切换全屏禁用
 
 ### 编译
 ```bash

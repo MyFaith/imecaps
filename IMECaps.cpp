@@ -30,6 +30,7 @@ static bool capsLockHeld = false;
 static bool ctrlKeyPressed = false;
 static bool altKeyPressed = false;
 static bool shiftKeyPressed = false;
+static bool fKeyPressed = false;  // 新增变量
 
 // 修改后的全屏检测函数
 bool IsFullscreenWindow() {
@@ -77,6 +78,21 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
             altKeyPressed = (wParam == WM_KEYDOWN);
         } else if (p->vkCode == VK_LSHIFT || p->vkCode == VK_RSHIFT) {
             shiftKeyPressed = (wParam == WM_KEYDOWN);
+        } else if (p->vkCode == 'F') {  // 新增F键检测
+            fKeyPressed = (wParam == WM_KEYDOWN);
+        }
+
+        // 新增F键组合检测
+        if (p->vkCode == 'F' && wParam == WM_KEYDOWN) {
+            if (ctrlKeyPressed && altKeyPressed && shiftKeyPressed) {
+                // 切换全屏禁用状态
+                isFullscreenDisable = !isFullscreenDisable;
+                // 更新菜单勾选状态
+                CheckMenuItem(hPopupMenu, IDM_FULLSCREEN, 
+                    isFullscreenDisable ? (MF_CHECKED | MF_BYCOMMAND) : (MF_UNCHECKED | MF_BYCOMMAND));
+                // 阻止F键输入
+                return 1;
+            }
         }
 
         // 完全拦截Caps Lock键
