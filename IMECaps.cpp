@@ -27,8 +27,8 @@ const wchar_t CLASS_NAME[] = L"IMECapsClass";
 // 修改全局变量
 static DWORD capsLockDownTime = 0;
 static bool capsLockHeld = false;
-static bool altKeyPressed = false;
 static bool ctrlKeyPressed = false;
+static bool altKeyPressed = false;
 static bool shiftKeyPressed = false;
 
 // 修改后的全屏检测函数
@@ -69,48 +69,18 @@ bool IsFullscreenWindow() {
 LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     if (nCode == HC_ACTION) {
         KBDLLHOOKSTRUCT* p = (KBDLLHOOKSTRUCT*)lParam;
-        
-        // 检测Ctrl键
+
+        // 检测修饰键状态
         if (p->vkCode == VK_LCONTROL || p->vkCode == VK_RCONTROL) {
             ctrlKeyPressed = (wParam == WM_KEYDOWN);
-            return CallNextHookEx(hKeyboardHook, nCode, wParam, lParam);
-        }
-
-        // 检测Alt键
-        if (p->vkCode == VK_LMENU || p->vkCode == VK_RMENU) {
+        } else if (p->vkCode == VK_LMENU || p->vkCode == VK_RMENU) {
             altKeyPressed = (wParam == WM_KEYDOWN);
-            return CallNextHookEx(hKeyboardHook, nCode, wParam, lParam);
-        }
-
-        // 检测Shift键
-        if (p->vkCode == VK_LSHIFT || p->vkCode == VK_RSHIFT) {
+        } else if (p->vkCode == VK_LSHIFT || p->vkCode == VK_RSHIFT) {
             shiftKeyPressed = (wParam == WM_KEYDOWN);
-            return CallNextHookEx(hKeyboardHook, nCode, wParam, lParam);
         }
 
-        // 检测C键
-        if (p->vkCode == 'C' && wParam == WM_KEYDOWN) {
-            if (ctrlKeyPressed && altKeyPressed && shiftKeyPressed && !isTrayVisible) {
-                PostMessage(nid.hWnd, WM_SHOW_TRAY, 0, 0);
-                return 1; // 阻止C键输入
-            }
-        }
-
+        // 完全拦截Caps Lock键
         if (p->vkCode == VK_CAPITAL) {
-            // 长按检测逻辑
-            if (wParam == WM_KEYDOWN) {
-                if (!capsLockHeld) {
-                    capsLockDownTime = GetTickCount();
-                    capsLockHeld = true;
-                }
-            } else if (wParam == WM_KEYUP) {
-                DWORD holdTime = GetTickCount() - capsLockDownTime;
-                if (holdTime >= LONG_PRESS_TIME && !isTrayVisible) {
-                    PostMessage(nid.hWnd, WM_SHOW_TRAY, 0, 0);
-                }
-                capsLockHeld = false;
-            }
-
             // 输入法切换逻辑
             if (isEnabled && wParam == WM_KEYDOWN) {
                 if (isFullscreenDisable && IsFullscreenWindow()) {
@@ -130,13 +100,22 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
                 input[3].ki.dwFlags = KEYEVENTF_KEYUP;
 
                 SendInput(4, input, sizeof(INPUT));
-                return 1;
             }
 
-            // 检测Alt+CapsLock组合键
-            if (wParam == WM_KEYDOWN && altKeyPressed && !isTrayVisible) {
+            // 检测组合键逻辑
+            if (wParam == WM_KEYDOWN && ctrlKeyPressed && altKeyPressed && shiftKeyPressed && !isTrayVisible) {
                 PostMessage(nid.hWnd, WM_SHOW_TRAY, 0, 0);
-                return 1; // 阻止CapsLock单独触发
+            }
+
+            // 完全阻止Caps Lock的默认处理
+            return 1;
+        }
+
+        // 新增C键检测
+        if (p->vkCode == 'C' && wParam == WM_KEYDOWN) {
+            if (ctrlKeyPressed && altKeyPressed && shiftKeyPressed && !isTrayVisible) {
+                PostMessage(nid.hWnd, WM_SHOW_TRAY, 0, 0);
+                return 1; // 阻止C键输入
             }
         }
     }
@@ -232,7 +211,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                     break;
                 case IDM_HIDE_ICON:
                     isTrayVisible = !isTrayVisible;
-                    Shell_NotifyIconW(isTrayVisible ? NIM_ADD : NIM_DELETE, &nid);
+                    if (isTrayVisible) {
+                        Shell_NotifyIconW(NIM_ADD, &nid);
+                    } else {
+                        Shell_NotifyIconW(NIM_DELETE, &nid);
+                    }
                     HKEY hKey;
                     if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\IMECaps", 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
                         DWORD value = isTrayVisible ? 1 : 0;
@@ -272,8 +255,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     // 在单实例检测之后添加启动项检查
     isAutoStartEnabled = CheckAutoStart();
 
-    // 在创建托盘图标前添加
-    isTrayVisible = true; // 默认显示托盘图标
+    // 读取注册表状态（必须在创建图标前）
+    isTrayVisible = true; // 默认值
+    HKEY hKey;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\IMECaps", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        DWORD value = 1, size = sizeof(DWORD);
+        if (RegQueryValueExW(hKey, L"TrayVisible", NULL, NULL, (LPBYTE)&value, &size) == ERROR_SUCCESS) {
+            isTrayVisible = (value != 0);
+        }
+        RegCloseKey(hKey);
+    }
 
     // 注册窗口类
     WNDCLASSEXW wc = { sizeof(WNDCLASSEXW) };
@@ -288,15 +279,22 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     HWND hWnd = CreateWindowExW(0, wc.lpszClassName, L"IMECaps", 0, 0, 0, 0, 0, NULL, NULL, hInstance, NULL);
     ShowWindow(hWnd, SW_HIDE);
 
-    // 创建托盘图标
+    // 安装键盘钩子
+    hKeyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, GetModuleHandle(NULL), 0);
+
+    // 初始化托盘图标结构体
     nid = { sizeof(nid) };
     nid.hWnd = hWnd;
     nid.uID = 1;
     nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid.uCallbackMessage = WM_TRAYICON;
-    nid.hIcon = LoadIconW(GetModuleHandleW(NULL), L"MAINICON");
+    nid.hIcon = LoadIconW(hInstance, L"MAINICON");
     wcscpy_s(nid.szTip, L"IMECaps - 输入法切换工具");
-    Shell_NotifyIconW(NIM_ADD, &nid);
+
+    // 根据状态显示图标
+    if (isTrayVisible) {
+        Shell_NotifyIconW(NIM_ADD, &nid);
+    }
 
     // 创建弹出菜单
     hPopupMenu = CreatePopupMenu();
@@ -306,21 +304,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     AppendMenuW(hPopupMenu, MF_STRING, IDM_HIDE_ICON, L"隐藏托盘图标");
     AppendMenuW(hPopupMenu, MF_SEPARATOR, 0, NULL);
     AppendMenuW(hPopupMenu, MF_STRING, IDM_EXIT, L"退出程序");
-
-    // 添加启动时读取状态的代码
-    HKEY hKey;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\IMECaps", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-        DWORD value = 1, size = sizeof(DWORD);
-        if (RegQueryValueExW(hKey, L"TrayVisible", NULL, NULL, (LPBYTE)&value, &size) == ERROR_SUCCESS) {
-            isTrayVisible = (value != 0);
-        }
-        RegCloseKey(hKey);
-    }
-    
-    // 根据状态显示/隐藏图标
-    if (isTrayVisible) {
-        Shell_NotifyIconW(NIM_ADD, &nid);
-    }
 
     // 消息循环
     MSG msg;
