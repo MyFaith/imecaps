@@ -3,5 +3,5 @@
 
 ### 编译
 ```bash
-g++ IMECaps.cpp -o IMECaps.exe -mwindows -luser32 -lshell32 -DUNICODE -D_UNICODE
+g++ IMECaps.cpp IMECaps.res -o IMECaps.exe -mwindows -luser32 -lshell32 -ladvapi32 -lgdi32
 ```
